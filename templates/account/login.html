@@ -1,0 +1,99 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}Login{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0 text-center">
+                        <i class="bi bi-person-circle me-2"></i>
+                        {% trans "Sign In" %}
+                    </h4>
+                </div>
+                <div class="card-body p-4">
+                    <form class="login" method="POST" action="{% url 'account_login' %}">
+                        {% csrf_token %}
+                        
+                        {% if form.non_field_errors %}
+                            <div class="alert alert-danger d-flex align-items-center" role="alert">
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                                <div>{{ form.non_field_errors.0 }}</div>
+                            </div>
+                        {% endif %}
+                        
+                        <div class="mb-3">
+                            <label for="id_login" class="form-label fw-semibold">
+                                <i class="bi bi-person me-1"></i>Username
+                            </label>
+                            <input type="text" 
+                                   name="login" 
+                                   class="form-control form-control-lg {% if form.login.errors %}is-invalid{% endif %}" 
+                                   id="id_login" 
+                                   placeholder="Enter your username" 
+                                   required
+                                   value="{{ form.login.value|default:'' }}">
+                            {% if form.login.errors %}
+                                <div class="invalid-feedback">
+                                    {{ form.login.errors.0 }}
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="id_password" class="form-label fw-semibold">
+                                <i class="bi bi-lock me-1"></i>Password
+                            </label>
+                            <input type="password" 
+                                   name="password" 
+                                   class="form-control form-control-lg {% if form.password.errors %}is-invalid{% endif %}" 
+                                   id="id_password" 
+                                   placeholder="Enter your password" 
+                                   required>
+                            {% if form.password.errors %}
+                                <div class="invalid-feedback">
+                                    {{ form.password.errors.0 }}
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" name="remember" class="form-check-input" id="id_remember">
+                            <label class="form-check-label" for="id_remember">
+                                {% trans "Remember me" %}
+                            </label>
+                        </div>
+                        
+                        <div class="d-grid mb-3">
+                            <button class="btn btn-primary btn-lg" type="submit">
+                                <i class="bi bi-box-arrow-in-right me-2"></i>
+                                {% trans "Sign In" %}
+                            </button>
+                        </div>
+                    </form>
+                    
+                    <hr>
+                    
+                    <div class="text-center">
+                        <a href="{% url 'account_reset_password' %}" class="text-decoration-none">
+                            <i class="bi bi-key me-1"></i>
+                            {% trans "Forgot Password?" %}
+                        </a>
+                    </div>
+                    
+                    <div class="text-center mt-3">
+                        <p class="mb-0">Don't have an account?</p>
+                        <a href="{% url 'account_signup' %}" class="btn btn-outline-primary btn-sm mt-1">
+                            <i class="bi bi-person-plus me-1"></i>
+                            {% trans "Create Account" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

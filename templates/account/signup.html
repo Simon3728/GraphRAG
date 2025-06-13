@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}Sign Up{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-7 col-lg-6">
+            <div class="card shadow">
+                <div class="card-header bg-success text-white">
+                    <h4 class="mb-0 text-center">
+                        <i class="bi bi-person-plus-fill me-2"></i>
+                        {% trans "Create Account" %}
+                    </h4>
+                </div>
+                <div class="card-body p-4">
+                    <form class="signup" method="post" action="{% url 'account_signup' %}">
+                        {% csrf_token %}
+                        
+                        {% if form.non_field_errors %}
+                            <div class="alert alert-danger d-flex align-items-center" role="alert">
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                                <div>{{ form.non_field_errors.0 }}</div>
+                            </div>
+                        {% endif %}
+                        
+                        <div class="mb-3">
+                            <label for="id_username" class="form-label fw-semibold">
+                                <i class="bi bi-person me-1"></i>Username *
+                            </label>
+                            <input type="text" 
+                                   name="username" 
+                                   class="form-control {% if form.username.errors %}is-invalid{% endif %}" 
+                                   id="id_username" 
+                                   placeholder="Choose a username (min 5 characters)" 
+                                   required
+                                   value="{{ form.username.value|default:'' }}">
+                            {% if form.username.errors %}
+                                <div class="invalid-feedback">
+                                    {{ form.username.errors.0 }}
+                                </div>
+                            {% else %}
+                                <div class="form-text">
+                                    <small><i class="bi bi-info-circle me-1"></i>Minimum 5 characters. Letters, digits and @/./+/-/_ only.</small>
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="id_email" class="form-label fw-semibold">
+                                <i class="bi bi-envelope me-1"></i>Email Address *
+                            </label>
+                            <input type="email" 
+                                   name="email" 
+                                   class="form-control {% if form.email.errors %}is-invalid{% endif %}" 
+                                   id="id_email" 
+                                   placeholder="Enter your email address" 
+                                   required
+                                   value="{{ form.email.value|default:'' }}">
+                            {% if form.email.errors %}
+                                <div class="invalid-feedback">
+                                    {{ form.email.errors.0 }}
+                                </div>
+                            {% else %}
+                                <div class="form-text">
+                                    <small><i class="bi bi-info-circle me-1"></i>We'll send you a verification email.</small>
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="id_password1" class="form-label fw-semibold">
+                                <i class="bi bi-lock me-1"></i>Password *
+                            </label>
+                            <input type="password" 
+                                   name="password1" 
+                                   class="form-control {% if form.password1.errors %}is-invalid{% endif %}" 
+                                   id="id_password1" 
+                                   placeholder="Create a strong password" 
+                                   required>
+                            {% if form.password1.errors %}
+                                <div class="invalid-feedback">
+                                    {{ form.password1.errors.0 }}
+                                </div>
+                            {% else %}
+                                <div class="form-text">
+                                    <small>
+                                        <i class="bi bi-shield-check me-1"></i>
+                                        Must be 8+ characters, not entirely numeric, not too common
+                                    </small>
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label for="id_password2" class="form-label fw-semibold">
+                                <i class="bi bi-lock-fill me-1"></i>Confirm Password *
+                            </label>
+                            <input type="password" 
+                                   name="password2" 
+                                   class="form-control {% if form.password2.errors %}is-invalid{% endif %}" 
+                                   id="id_password2" 
+                                   placeholder="Confirm your password" 
+                                   required>
+                            {% if form.password2.errors %}
+                                <div class="invalid-feedback">
+                                    {{ form.password2.errors.0 }}
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="d-grid mb-3">
+                            <button class="btn btn-success btn-lg" type="submit">
+                                <i class="bi bi-person-check me-2"></i>
+                                {% trans "Create Account" %}
+                            </button>
+                        </div>
+                    </form>
+                    
+                    <hr>
+                    
+                    <div class="text-center">
+                        <p class="mb-0">Already have an account?</p>
+                        <a href="{% url 'account_login' %}" class="btn btn-outline-primary btn-sm mt-1">
+                            <i class="bi bi-box-arrow-in-right me-1"></i>
+                            {% trans "Sign In" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}Sign Out{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5">
+            <div class="card shadow">
+                <div class="card-header bg-warning text-dark">
+                    <h4 class="mb-0 text-center">
+                        <i class="bi bi-box-arrow-right me-2"></i>
+                        {% trans "Sign Out" %}
+                    </h4>
+                </div>
+                <div class="card-body p-4 text-center">
+                    <div class="mb-4">
+                        <i class="bi bi-person-circle display-4 text-muted"></i>
+                    </div>
+                    
+                    <p class="lead mb-4">
+                        {% trans "Are you sure you want to sign out?" %}
+                    </p>
+                    
+                    <form method="post" action="{% url 'account_logout' %}">
+                        {% csrf_token %}
+                        
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-warning btn-lg" type="submit">
+                                <i class="bi bi-box-arrow-right me-2"></i>
+                                {% trans "Sign Out" %}
+                            </button>
+                            
+                            <a href="/" class="btn btn-outline-secondary">
+                                <i class="bi bi-arrow-left me-2"></i>
+                                {% trans "Cancel" %}
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

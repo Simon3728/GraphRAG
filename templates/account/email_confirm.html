@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}Confirm Email{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0 text-center">
+                        <i class="bi bi-envelope-check me-2"></i>
+                        {% trans "Confirm Email Address" %}
+                    </h4>
+                </div>
+                <div class="card-body p-4 text-center">
+                    {% if confirmation %}
+                        <div class="mb-4">
+                            <i class="bi bi-patch-check display-4 text-primary"></i>
+                        </div>
+                        
+                        <h5 class="mb-3">{% trans "Confirm Your Email" %}</h5>
+                        
+                        <p class="mb-4">
+                            Please confirm that 
+                            <strong class="text-primary">{{ confirmation.email_address.email }}</strong> 
+                            is the correct email address for your account.
+                        </p>
+                        
+                        <form method="post" action="{% url 'account_confirm_email' confirmation.key %}">
+                            {% csrf_token %}
+                            
+                            <div class="d-grid gap-2">
+                                <button class="btn btn-primary btn-lg" type="submit">
+                                    <i class="bi bi-check-circle me-2"></i>
+                                    {% trans "Confirm Email" %}
+                                </button>
+                                
+                                <a href="{% url 'account_login' %}" class="btn btn-outline-secondary">
+                                    <i class="bi bi-arrow-left me-2"></i>
+                                    {% trans "Cancel" %}
+                                </a>
+                            </div>
+                        </form>
+                    {% else %}
+                        <div class="mb-4">
+                            <i class="bi bi-exclamation-triangle display-4 text-warning"></i>
+                        </div>
+                        
+                        <h5 class="mb-3 text-warning">{% trans "Invalid Confirmation Link" %}</h5>
+                        
+                        <p class="mb-4">
+                            This email confirmation link is invalid or has already been used.
+                        </p>
+                        
+                        <div class="d-grid gap-2">
+                            <a href="{% url 'account_email' %}" class="btn btn-warning">
+                                <i class="bi bi-arrow-clockwise me-2"></i>
+                                {% trans "Request New Confirmation" %}
+                            </a>
+                            
+                            <a href="{% url 'account_login' %}" class="btn btn-outline-primary">
+                                <i class="bi bi-box-arrow-in-right me-2"></i>
+                                {% trans "Back to Login" %}
+                            </a>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
