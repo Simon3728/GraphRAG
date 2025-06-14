@@ -1,9 +1,12 @@
+# filemanager/admin.py - Complete simplified admin
+
 from django.contrib import admin
 from django.contrib.auth.models import Group
 from django.contrib.auth.admin import GroupAdmin
 from django.utils.html import format_html
 from django.urls import reverse
-from django.utils.safestring import mark_safe
+from django.core.exceptions import ValidationError
+from django import forms
 from .models import Folder, UploadedDocument, DocumentChunk, ProcessingLog
 
 
@@ -27,41 +30,99 @@ admin.site.unregister(Group)
 admin.site.register(Group, CustomGroupAdmin)
 
 
+# Custom admin form for Folder
+class FolderAdminForm(forms.ModelForm):
+    """Custom form for Folder admin - simplified"""
+    
+    class Meta:
+        model = Folder
+        exclude = ['created_by']
+        widgets = {
+            'description': forms.Textarea(attrs={'rows': 3}),
+        }
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # Add help text
+        self.fields['access_type'].help_text = (
+            "Private: Only you can access | "
+            "Public: Everyone can access | "
+            "Group: Only group members can access"
+        )
+        
+        self.fields['group'].help_text = "Only required for 'Group Access' folders"
+    
+    def clean(self):
+        """Custom validation for access type and group"""
+        cleaned_data = super().clean()
+        access_type = cleaned_data.get('access_type')
+        group = cleaned_data.get('group')
+        
+        if access_type == 'group' and not group:
+            raise ValidationError("Group is required when access type is 'Group Access'")
+        
+        if access_type != 'group' and group:
+            # Clear group if not needed
+            cleaned_data['group'] = None
+        
+        return cleaned_data
+
+
 @admin.register(Folder)
 class FolderAdmin(admin.ModelAdmin):
-    """Admin interface for Folder management"""
+    """Simplified admin interface for Folder management"""
+    
+    form = FolderAdminForm
+    
     list_display = [
-        'name', 
-        'group', 
+        'name',
+        'access_type_display', 
+        'access_details',
         'parent_folder', 
         'created_by', 
         'document_count',
         'subfolder_count',
         'created_at'
     ]
+    
     list_filter = [
+        'access_type',
         'group', 
         'created_at',
         'parent_folder'
     ]
+    
     search_fields = [
         'name', 
         'description',
         'created_by__username',
-        'created_by__email'
+        'created_by__email',
+        'group__name'
     ]
-    raw_id_fields = ['parent_folder', 'created_by']
-    readonly_fields = ['created_at', 'document_count', 'subfolder_count', 'full_path']
+    
+    readonly_fields = [
+        'created_at',
+        'created_by_display',
+        'document_count', 
+        'subfolder_count', 
+        'full_path_display',
+        'access_description_display'
+    ]
     
     fieldsets = (
         ('Basic Information', {
-            'fields': ('name', 'description', 'full_path')
+            'fields': ('name', 'description', 'full_path_display')
+        }),
+        ('Access Control', {
+            'fields': ('access_type', 'group', 'access_description_display'),
+            'description': 'Configure who can access this folder'
         }),
         ('Organization', {
-            'fields': ('parent_folder', 'group')
+            'fields': ('parent_folder',)
         }),
         ('Metadata', {
-            'fields': ('created_by', 'created_at'),
+            'fields': ('created_by_display', 'created_at'),
             'classes': ('collapse',)
         }),
         ('Statistics', {
@@ -70,36 +131,184 @@ class FolderAdmin(admin.ModelAdmin):
         }),
     )
     
+    def created_by_display(self, obj):
+        """Show who created the folder (readonly)"""
+        if obj.created_by:
+            return f"{obj.created_by.username} ({obj.created_by.get_full_name() or obj.created_by.email})"
+        return "Unknown"
+    created_by_display.short_description = 'Created By'
+
+    def access_type_display(self, obj):
+        """UPDATED: Clean access type display without colors or confusing text"""
+        # Simple text display without colors or user-specific language
+        display_text = obj.get_access_type_display()
+        
+        # Remove the confusing "(Only Me)" type text and just show the type
+        type_mapping = {
+            'Private (Only Me)': 'Private',
+            'Public (Everyone in Company)': 'Public',
+            'Group Access': 'Group'
+        }
+        
+        clean_text = type_mapping.get(display_text, display_text)
+        
+        # Return plain text without any styling
+        return clean_text
+    
+    access_type_display.short_description = 'Access Type'
+    access_type_display.admin_order_field = 'access_type'
+    
+    def access_details(self, obj):
+        """Show specific access details - updated for admin context"""
+        if obj.access_type == 'private':
+            return f"Owner: {obj.created_by.username if obj.created_by else 'Unknown'}"
+        elif obj.access_type == 'public':
+            return "All users"
+        elif obj.access_type == 'group':
+            if obj.group:
+                member_count = obj.group.user_set.count()
+                return f"Group: {obj.group.name} ({member_count} members)"
+            return "No group assigned"
+        return "Unknown"
+    
+    access_details.short_description = 'Access Details'
+    
     def document_count(self, obj):
+        """Document count with link"""
         count = obj.documents.count()
         if count > 0:
-            url = reverse('admin:documents_uploadeddocument_changelist')
+            url = reverse('admin:filemanager_uploadeddocument_changelist')
             return format_html(
                 '<a href="{}?folder__id__exact={}">{} documents</a>',
                 url, obj.id, count
             )
         return '0 documents'
+    
     document_count.short_description = 'Documents'
     
     def subfolder_count(self, obj):
+        """Subfolder count with link"""
         count = obj.children.count()
         if count > 0:
-            url = reverse('admin:documents_folder_changelist')
+            url = reverse('admin:filemanager_folder_changelist')
             return format_html(
                 '<a href="{}?parent_folder__id__exact={}">{} subfolders</a>',
                 url, obj.id, count
             )
         return '0 subfolders'
+    
     subfolder_count.short_description = 'Subfolders'
     
-    def full_path(self, obj):
-        return obj.get_path()
-    full_path.short_description = 'Full Path'
+    def full_path_display(self, obj):
+        """Full path with access info"""
+        return obj.get_full_path_with_access()
+    
+    full_path_display.short_description = 'Full Path'
+    
+    def access_description_display(self, obj):
+        """Human-readable access description"""
+        return obj.get_access_description()
+    
+    access_description_display.short_description = 'Access Description'
+    
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        """FIXED: Show all folders for parent folder selection in admin"""
+        if db_field.name == "parent_folder":
+            # In admin, show ALL folders (not filtered by user access)
+            kwargs["queryset"] = Folder.objects.all().select_related('group', 'created_by').order_by('name')
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
     
     def get_queryset(self, request):
+        """Optimize queries"""
         return super().get_queryset(request).select_related(
             'group', 'parent_folder', 'created_by'
         ).prefetch_related('documents', 'children')
+    
+    def save_model(self, request, obj, form, change):
+        """Auto-populate created_by for new folders"""
+        if not change:  # New object
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)
+    
+    actions = ['make_public', 'make_private']
+    
+    def make_public(self, request, queryset):
+        """Admin action to make folders public - with hierarchy-aware processing"""
+        count = 0
+        errors = []
+        
+        # FIXED: Sort folders by hierarchy depth (parents first)
+        folders_by_depth = []
+        for folder in queryset:
+            depth = 0
+            current = folder.parent_folder
+            while current:
+                depth += 1
+                current = current.parent_folder
+            folders_by_depth.append((depth, folder))
+        
+        # Sort by depth (shallowest/parents first)
+        folders_by_depth.sort(key=lambda x: x[0])
+        
+        for depth, folder in folders_by_depth:
+            if folder.access_type != 'public':
+                try:
+                    folder.access_type = 'public'
+                    folder.group = None
+                    folder.full_clean()
+                    folder.save()
+                    count += 1
+                except ValidationError as e:
+                    errors.append(f"'{folder.name}': {'; '.join(e.messages)}")
+        
+        if count > 0:
+            self.message_user(request, f'{count} folders made public.')
+        if errors:
+            error_msg = "Some folders could not be changed: " + " | ".join(errors[:3])
+            if len(errors) > 3:
+                error_msg += f" and {len(errors) - 3} more errors."
+            self.message_user(request, error_msg, level='ERROR')
+    
+    make_public.short_description = 'Make selected folders public'
+    
+    def make_private(self, request, queryset):
+        """Admin action to make folders private - with hierarchy-aware processing"""
+        count = 0
+        errors = []
+        
+        # FIXED: Sort folders by hierarchy depth (children first for private)
+        folders_by_depth = []
+        for folder in queryset:
+            depth = 0
+            current = folder.parent_folder
+            while current:
+                depth += 1
+                current = current.parent_folder
+            folders_by_depth.append((depth, folder))
+        
+        # Sort by depth (deepest/children first for private)
+        folders_by_depth.sort(key=lambda x: x[0], reverse=True)
+        
+        for depth, folder in folders_by_depth:
+            if folder.access_type != 'private':
+                try:
+                    folder.access_type = 'private'
+                    folder.group = None
+                    folder.full_clean()
+                    folder.save()
+                    count += 1
+                except ValidationError as e:
+                    errors.append(f"'{folder.name}': {'; '.join(e.messages)}")
+        
+        if count > 0:
+            self.message_user(request, f'{count} folders made private.')
+        if errors:
+            error_msg = "Some folders could not be changed: " + " | ".join(errors[:3])
+            if len(errors) > 3:
+                error_msg += f" and {len(errors) - 3} more errors."
+            self.message_user(request, error_msg, level='ERROR')
+    
+    make_private.short_description = 'Make selected folders private'
 
 
 @admin.register(UploadedDocument)
@@ -108,7 +317,6 @@ class UploadedDocumentAdmin(admin.ModelAdmin):
     list_display = [
         'title',
         'file_type',
-        'group',
         'folder',
         'processing_status',
         'uploaded_by',
@@ -119,7 +327,6 @@ class UploadedDocumentAdmin(admin.ModelAdmin):
     list_filter = [
         'file_type',
         'processing_status',
-        'group',
         'uploaded_at',
         'processed_at'
     ]
@@ -147,7 +354,7 @@ class UploadedDocumentAdmin(admin.ModelAdmin):
             'fields': ('title', 'file', 'file_preview', 'original_filename')
         }),
         ('Organization', {
-            'fields': ('folder', 'group')
+            'fields': ('folder',)
         }),
         ('File Details', {
             'fields': ('file_type', 'file_size_display', 'mime_type'),
@@ -191,8 +398,6 @@ class UploadedDocumentAdmin(admin.ModelAdmin):
                 doc.processing_status = 'pending'
                 doc.save()
                 count += 1
-                # TODO: Trigger background processing
-                # process_document_and_update_user_vectorstore.delay(doc.id, doc.uploaded_by.id)
         
         self.message_user(request, f'{count} documents marked for reprocessing.')
     reprocess_documents.short_description = 'Reprocess selected documents'
@@ -205,7 +410,7 @@ class UploadedDocumentAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request):
         return super().get_queryset(request).select_related(
-            'group', 'folder', 'uploaded_by'
+            'folder', 'uploaded_by'
         )
 
 

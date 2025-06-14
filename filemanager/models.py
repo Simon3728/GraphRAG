@@ -1,5 +1,5 @@
 from django.db import models
-from django.contrib.auth.models import User, Group  # Use Django's built-in Group
+from django.contrib.auth.models import User, Group
 from django.core.exceptions import ValidationError
 import os
 from pathlib import Path
@@ -7,7 +7,14 @@ import mimetypes
 
 
 class Folder(models.Model):
-    """Simple nested folder structure with Django Group permissions"""
+    """Folder structure with flexible access control and parent-child validation"""
+    
+    ACCESS_TYPE_CHOICES = [
+        ('private', 'Private (Only Me)'),
+        ('public', 'Public (Everyone in Company)'),
+        ('group', 'Group Access'),
+    ]
+    
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     parent_folder = models.ForeignKey(
@@ -22,32 +29,160 @@ class Folder(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     
-    # Use Django's built-in Group system
+    # Access control system
+    access_type = models.CharField(
+        max_length=10, 
+        choices=ACCESS_TYPE_CHOICES, 
+        default='private',
+        help_text="Who can access this folder"
+    )
+    
+    # Only required when access_type='group'
     group = models.ForeignKey(
         Group, 
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        help_text="Required only for group access"
     )
 
     class Meta:
         verbose_name_plural = "Folders"
-        unique_together = ['name', 'parent_folder', 'group']
+        constraints = [
+            # For group folders: name + parent + access_type + group must be unique
+            models.UniqueConstraint(
+                fields=['name', 'parent_folder', 'access_type', 'group'],
+                condition=models.Q(access_type='group'),
+                name='unique_group_folder'
+            ),
+            # For private folders: name + parent + access_type must be unique
+            models.UniqueConstraint(
+                fields=['name', 'parent_folder', 'access_type'],
+                condition=models.Q(access_type='private'),
+                name='unique_private_folder'
+            ),
+            # For public folders: name + parent + access_type must be unique
+            models.UniqueConstraint(
+                fields=['name', 'parent_folder', 'access_type'],
+                condition=models.Q(access_type='public'),
+                name='unique_public_folder'
+            ),
+        ]
     
     def __str__(self):
+        access_info = {
+            'private': f"(Private - {self.created_by.username if self.created_by else 'Unknown'})",
+            'public': "(Public)",
+            'group': f"({self.group.name if self.group else 'No Group'})"
+        }
+        
         if self.parent_folder:
-            return f"{self.parent_folder} / {self.name}"
-        return f"{self.name} ({self.group.name})"
+            return f"{self.parent_folder} / {self.name} {access_info.get(self.access_type, '')}"
+        return f"{self.name} {access_info.get(self.access_type, '')}"
     
     def clean(self):
-        """Prevent circular references"""
+        """Enhanced validation for folder configuration and parent-child relationships"""
+        # Prevent circular references
         if self.parent_folder:
             current = self.parent_folder
-            for _ in range(10):
+            for _ in range(10):  # Prevent infinite loops
                 if current == self:
                     raise ValidationError("Cannot create circular folder reference")
                 if current.parent_folder:
                     current = current.parent_folder
                 else:
                     break
+        
+        # Validate group requirement
+        if self.access_type == 'group' and not self.group:
+            raise ValidationError("Group is required when access type is 'group'")
+        
+        if self.access_type != 'group' and self.group:
+            raise ValidationError("Group should only be set when access type is 'group'")
+        
+        # NEW: Validate parent-child access type compatibility
+        self._validate_parent_child_access()
+    
+    def _validate_parent_child_access(self):
+        """Validate that parent-child folder access types are logically compatible"""
+        
+        # Check parent folder restrictions
+        if self.parent_folder:
+            parent = Folder.objects.get(pk=self.parent_folder.pk)
+            
+            # Rule 1: Private parent cannot have public children
+            if parent.access_type == 'private' and self.access_type == 'public':
+                raise ValidationError(
+                    f"Cannot create public folder inside private folder '{parent.name}'. "
+                    "Public folders should not be hidden inside private folders."
+                )
+            
+            # Rule 2: Private parent cannot have group children (unless same user is in group)
+            if parent.access_type == 'private' and self.access_type == 'group':
+                if not (self.group and parent.created_by and parent.created_by.groups.filter(id=self.group.id).exists()):
+                    raise ValidationError(
+                        f"Cannot create group folder inside private folder '{parent.name}' "
+                        f"unless the folder owner is a member of group '{self.group.name if self.group else 'Unknown'}'."
+                    )
+            
+            # Rule 3: Group parent should contain compatible children
+            if parent.access_type == 'group' and self.access_type == 'group':
+                if parent.group != self.group:
+                    raise ValidationError(
+                        f"Group folder inside group folder '{parent.name}' should use the same group "
+                        f"(parent: '{parent.group.name}', child: '{self.group.name if self.group else 'None'}')."
+                    )
+        
+        # Check children restrictions when changing existing folder
+        if self.pk:  # Only for existing folders
+            self._validate_existing_children()
+    
+    def _validate_existing_children(self):
+        """Validate that existing children are compatible with new access type"""
+        children = self.children.all()
+        
+        if self.access_type == 'private':
+            # Private folders cannot have public children
+            public_children = children.filter(access_type='public')
+            if public_children.exists():
+                child_names = ', '.join([child.name for child in public_children[:3]])
+                if public_children.count() > 3:
+                    child_names += f' and {public_children.count() - 3} more'
+                raise ValidationError(
+                    f"Cannot make folder private because it contains public subfolders: {child_names}. "
+                    "Please change the child folders first."
+                )
+            
+            # Private folders cannot have group children (unless owner is in those groups)
+            if self.created_by:
+                user_groups = self.created_by.groups.all()
+                incompatible_group_children = children.filter(
+                    access_type='group'
+                ).exclude(group__in=user_groups)
+                
+                if incompatible_group_children.exists():
+                    child_names = ', '.join([f"{child.name} ({child.group.name})" for child in incompatible_group_children[:3]])
+                    if incompatible_group_children.count() > 3:
+                        child_names += f' and {incompatible_group_children.count() - 3} more'
+                    raise ValidationError(
+                        f"Cannot make folder private because it contains group subfolders you don't belong to: {child_names}. "
+                        "Please change the child folders first or ensure you're a member of those groups."
+                    )
+        
+        if self.access_type == 'group' and self.group:
+            # Group folders should have compatible group children
+            incompatible_group_children = children.filter(
+                access_type='group'
+            ).exclude(group=self.group)
+            
+            if incompatible_group_children.exists():
+                child_names = ', '.join([f"{child.name} ({child.group.name})" for child in incompatible_group_children[:3]])
+                if incompatible_group_children.count() > 3:
+                    child_names += f' and {incompatible_group_children.count() - 3} more'
+                raise ValidationError(
+                    f"Cannot change to group '{self.group.name}' because it contains subfolders from different groups: {child_names}. "
+                    "Please change the child folders first."
+                )
     
     def get_path(self):
         """Get folder path like 'Root/Sub1/Sub2'"""
@@ -58,10 +193,47 @@ class Folder(models.Model):
             current = current.parent_folder
         return " / ".join(path)
     
+    def get_full_path_with_access(self):
+        """Get path with access type info"""
+        access_suffix = {
+            'private': ' [Private]',
+            'public': ' [Public]',
+            'group': f' [Group: {self.group.name if self.group else "None"}]'
+        }
+        return self.get_path() + access_suffix.get(self.access_type, '')
+    
     def user_can_access(self, user):
-        """Check if user can access this folder"""
-        return self.group in user.groups.all()
-
+        """Check if user can access this folder based on access type"""
+        if self.access_type == 'private':
+            return self.created_by == user
+        elif self.access_type == 'public':
+            return True  # Everyone can access public folders
+        elif self.access_type == 'group':
+            return self.group and self.group in user.groups.all()
+        return False
+    
+    def get_access_description(self):
+        """Human-readable access description"""
+        if self.access_type == 'private':
+            return f"Private folder by {self.created_by.username if self.created_by else 'Unknown'}"
+        elif self.access_type == 'public':
+            return "Public folder - accessible by everyone"
+        elif self.access_type == 'group':
+            return f"Group folder - accessible by '{self.group.name if self.group else 'No Group'}' members"
+        return "Unknown access type"
+    
+    @classmethod
+    def get_user_accessible_folders(cls, user):
+        """Get all folders user can access"""
+        from django.db.models import Q
+        
+        user_groups = user.groups.all()
+        
+        return cls.objects.filter(
+            Q(access_type='private', created_by=user) |  # User's private folders
+            Q(access_type='public') |  # Public folders
+            Q(access_type='group', group__in=user_groups)  # Group folders user belongs to
+        ).distinct()
 
 class UploadedDocument(models.Model):
     """Simplified document model - auto-populated user from request"""
