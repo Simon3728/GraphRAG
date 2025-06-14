@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'allauth.account',
 
     'chatbot',
+    'filemanager',
 ]
 
 MIDDLEWARE = [
